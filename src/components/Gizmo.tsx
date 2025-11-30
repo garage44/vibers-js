@@ -32,15 +32,20 @@ export function Gizmo({ position, mode, primScale = [1, 1, 1], onMove, onRotate,
   const [dragStart, setDragStart] = useState<{ x: number; y: number; worldPos: THREE.Vector3 } | null>(null);
 
   // Calculate scale based on camera distance (keep gizmo size consistent, not tied to prim size)
+  const lastScaleUpdateRef = useRef(0);
   useFrame(() => {
     if (!groupRef.current || !camera) return;
-    
-    // Scale gizmo based on camera distance to keep it visible but not too large
-    const distance = camera.position.distanceTo(new THREE.Vector3(...position));
-    const distanceScale = Math.max(0.5, Math.min(1.2, distance / 12));
-    
-    // Keep gizmo size relatively constant, independent of prim scale
-    groupRef.current.scale.setScalar(distanceScale);
+
+    // Throttle scale updates to every 100ms to reduce calculations
+    const now = performance.now();
+    if (now - lastScaleUpdateRef.current > 100) {
+      const distance = camera.position.distanceTo(new THREE.Vector3(...position));
+      const distanceScale = Math.max(0.5, Math.min(1.2, distance / 12));
+
+      // Keep gizmo size relatively constant, independent of prim scale
+      groupRef.current.scale.setScalar(distanceScale);
+      lastScaleUpdateRef.current = now;
+    }
   });
 
   // Handle mouse move for dragging

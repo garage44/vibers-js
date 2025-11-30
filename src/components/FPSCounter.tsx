@@ -6,6 +6,7 @@ let globalStats: any = null;
 
 function StatsUpdater() {
   useFrame(() => {
+    // Stats updates are lightweight, no need to throttle
     if (globalStats) {
       globalStats.begin();
       globalStats.end();

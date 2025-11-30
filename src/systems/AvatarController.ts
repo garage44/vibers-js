@@ -131,9 +131,9 @@ export function useAvatarController({
     const rayDirection = new THREE.Vector3(0, -1, 0);
     raycaster.set(rayOrigin, rayDirection);
 
-    // Cache plane objects - only update cache every 0.5 seconds to avoid expensive traversals
+    // Cache plane objects - only update cache every 2 seconds to avoid expensive traversals
     const now = performance.now();
-    if (now - lastCacheUpdateRef.current > 500 || cachedPlanesRef.current.length === 0) {
+    if (now - lastCacheUpdateRef.current > 2000 || cachedPlanesRef.current.length === 0) {
       cachedPlanesRef.current = [];
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh && object.geometry instanceof THREE.PlaneGeometry) {

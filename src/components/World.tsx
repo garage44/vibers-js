@@ -1,9 +1,8 @@
-import { Suspense, useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { Suspense, useEffect, useState, useMemo, useRef } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RegionComponent } from "./Region";
 import { Avatar } from "./Avatar";
-import { Ocean } from "./Ocean";
 import { PrimComponent } from "./Prim";
 import { BuildTool } from "./BuildTool";
 import { Gizmo, type GizmoMode } from "./Gizmo";
@@ -31,12 +30,11 @@ interface SceneContentProps {
   onDeselectPrim: () => void;
 }
 
-function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition, onAvatarPositionChange, editingPrim, gizmoMode, onPrimMove, onPrimRotate, onPrimScale, onDeselectPrim }: SceneContentProps) {
+function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, _avatarPosition, onAvatarPositionChange, editingPrim, gizmoMode, onPrimMove, onPrimRotate, onPrimScale, onDeselectPrim }: SceneContentProps) {
   const [regions, setRegions] = useState<Region[]>([]);
   const [loading, setLoading] = useState(true);
   const sunLightRef = useRef<THREE.DirectionalLight>(null);
   const ambientLightRef = useRef<THREE.AmbientLight>(null);
-  const shadowHelperRef = useRef<THREE.CameraHelper | null>(null);
   const { camera, scene } = useThree();
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
@@ -57,10 +55,20 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
     isWalking: false,
   });
 
+  // Update avatar state - position always updates immediately for camera responsiveness
+  // Only throttle React state updates slightly to reduce re-renders
+  const lastStateUpdateRef = useRef(0);
   useAvatarController({
     onStateChange: (newState) => {
-      setAvatarState(newState);
+      // Always update position immediately for camera
       onAvatarPositionChange(newState.position);
+
+      // Throttle React state updates to every 16ms (~60fps) to reduce re-renders
+      const now = performance.now();
+      if (now - lastStateUpdateRef.current > 16) {
+        setAvatarState(newState);
+        lastStateUpdateRef.current = now;
+      }
     },
     initialPosition: avatarState.position,
   });
@@ -268,7 +276,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
             regionZ, // Z position of region center
           ];
 
-          console.log("Positioning avatar at region center:", regionPosition);
+          // Removed console.log for performance
           setAvatarState(prev => ({
             ...prev,
             position: regionPosition,
@@ -624,20 +632,13 @@ export function World({ isDay }: { isDay: boolean }) {
         }}
         dpr={1} // Fixed DPR for consistent performance
         shadows={false} // Disable shadows for better performance
+        frameloop="always" // Ensure consistent frame loop
         performance={{ min: 0.5 }} // Allow frame rate to drop to 30fps before degrading
-        onCreated={({ gl, scene }) => {
+        onCreated={({ gl }) => {
           // Optimize renderer settings
           gl.shadowMap.enabled = false; // Shadows disabled for performance
           gl.setPixelRatio(1); // Force pixel ratio to 1
-
-          // Enable frustum culling (Three.js does this by default, but ensure it's enabled)
-          // This automatically hides objects outside the camera view
-          scene.traverse((object) => {
-            if (object instanceof THREE.Mesh) {
-              // Ensure frustum culling is enabled (default)
-              object.frustumCulled = true;
-            }
-          });
+          // Note: Frustum culling is enabled by default in Three.js, no need to traverse scene
         }}
       >
         <Suspense fallback={null}>

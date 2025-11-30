@@ -93,7 +93,7 @@ function AnimatedAvatar({ state }: AvatarProps) {
 
     // Find available animations - check common naming patterns
     const actionNames = Object.keys(actions);
-    console.log("Available animations:", actionNames);
+    // Removed console.log for performance
 
     // Try to find animations with common names (case-insensitive)
     const findAction = (names: string[]) => {
@@ -109,7 +109,6 @@ function AnimatedAvatar({ state }: AvatarProps) {
 
     const idleAction = findAction(["idle", "Idle", "TPose", "T-Pose", "idle_eyes"]) || Object.values(actions)[0];
     const walkAction = findAction(["walk", "Walk", "Walking", "walking", "walking_eyes"]) || idleAction;
-    const runAction = findAction(["run", "Run", "Running", "running"]) || walkAction;
 
     let targetAction: THREE.AnimationAction | null = null;
 

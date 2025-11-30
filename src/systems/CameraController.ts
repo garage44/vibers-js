@@ -44,7 +44,6 @@ const ZOOM_SENSITIVITY = 0.1;
 const ROTATION_SENSITIVITY = 0.005;
 const PITCH_SENSITIVITY = 0.005;
 const PAN_SENSITIVITY = 0.02; // Pan sensitivity (increased for better responsiveness)
-const GROUND_HEIGHT = 0;
 
 export function useCameraController({
   avatarPosition,
@@ -86,6 +85,12 @@ export function useCameraController({
   const raycasterRef = useRef(new THREE.Raycaster());
   // Smooth avatar position to prevent camera wobble
   const smoothedAvatarPositionRef = useRef(new THREE.Vector3(...avatarPosition));
+
+  // Reusable vectors to avoid allocations every frame
+  const tempVec1Ref = useRef(new THREE.Vector3());
+  const tempVec2Ref = useRef(new THREE.Vector3());
+  const tempVec3Ref = useRef(new THREE.Vector3());
+  const tempVec4Ref = useRef(new THREE.Vector3());
 
   // Free camera movement settings (Three.js best practices)
   const FREE_CAMERA_SPEED = 20; // Base speed in m/s
@@ -146,7 +151,7 @@ export function useCameraController({
             });
 
             const intersections = raycasterRef.current.intersectObjects(objects, true);
-            if (intersections.length > 0) {
+            if (intersections.length > 0 && intersections[0]) {
               // Focus on the clicked object
               freeCameraFocusRef.current = intersections[0].point.clone();
             } else {
@@ -388,8 +393,8 @@ export function useCameraController({
     const cameraState = cameraStateRef.current;
 
     // Smooth the avatar position to prevent camera wobble from position updates
-    const currentAvatarPos = new THREE.Vector3(...avatarPosition);
-    smoothedAvatarPositionRef.current.lerp(currentAvatarPos, 0.3);
+    tempVec1Ref.current.set(...avatarPosition);
+    smoothedAvatarPositionRef.current.lerp(tempVec1Ref.current, 0.3);
 
     let targetPosition: THREE.Vector3;
     let lookAtPosition: THREE.Vector3;
@@ -417,20 +422,21 @@ export function useCameraController({
       if (ctrlPressed) currentSpeed = FREE_CAMERA_SPEED_SLOW;
 
       // Calculate movement direction based on camera orientation
-      const forward = new THREE.Vector3();
+      // Reuse temp vectors to avoid allocations
+      const forward = tempVec1Ref.current;
       camera.getWorldDirection(forward);
       forward.y = 0; // Keep movement horizontal (unless moving up/down)
       forward.normalize();
 
-      const right = new THREE.Vector3();
+      const right = tempVec2Ref.current;
       right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
       right.y = 0; // Keep movement horizontal
       right.normalize();
 
-      const up = new THREE.Vector3(0, 1, 0);
+      const up = tempVec3Ref.current.set(0, 1, 0);
 
       // Calculate desired velocity based on input
-      const desiredVelocity = new THREE.Vector3();
+      const desiredVelocity = tempVec4Ref.current.set(0, 0, 0);
 
       // Horizontal movement
       if (keys.has("w") || keys.has("arrowup")) desiredVelocity.add(forward);
@@ -451,26 +457,26 @@ export function useCameraController({
       // Apply acceleration/deceleration for smooth movement
       const velocity = freeCameraVelocityRef.current;
       const acceleration = desiredVelocity.length() > 0 ? ACCELERATION : DECELERATION;
-      const speedDiff = desiredVelocity.clone().sub(velocity);
-      const accelVector = speedDiff.normalize().multiplyScalar(acceleration * delta);
+      tempVec1Ref.current.copy(desiredVelocity).sub(velocity); // speedDiff
+      const speedDiffLen = tempVec1Ref.current.length();
+      tempVec1Ref.current.normalize().multiplyScalar(acceleration * delta); // accelVector
 
-      if (speedDiff.length() > accelVector.length() * delta) {
-        velocity.add(accelVector);
+      if (speedDiffLen > tempVec1Ref.current.length() * delta) {
+        velocity.add(tempVec1Ref.current);
       } else {
         velocity.copy(desiredVelocity);
       }
 
       // Apply velocity to position
-      const movement = velocity.clone().multiplyScalar(delta);
-      freeCameraPositionRef.current.add(movement);
+      tempVec1Ref.current.copy(velocity).multiplyScalar(delta); // movement
+      freeCameraPositionRef.current.add(tempVec1Ref.current);
 
       // Set target position and look direction
       targetPosition = freeCameraPositionRef.current.clone();
 
       // Look direction is already set by camera rotation, so calculate lookAt point
-      const lookDirection = new THREE.Vector3();
-      camera.getWorldDirection(lookDirection);
-      lookAtPosition = targetPosition.clone().add(lookDirection.multiplyScalar(10));
+      camera.getWorldDirection(tempVec1Ref.current); // lookDirection
+      lookAtPosition = targetPosition.clone().add(tempVec1Ref.current.multiplyScalar(10));
     } else {
       // Avatar-following mode: orbit around avatar
       // Use smoothed avatar position to prevent wobble
@@ -481,11 +487,12 @@ export function useCameraController({
       const verticalOffset = cameraState.distance * Math.sin(cameraState.pitch);
 
       // Calculate camera position relative to avatar
-      const cameraOffset = new THREE.Vector3(
+      tempVec1Ref.current.set(
         Math.sin(cameraState.azimuth) * horizontalDistance,
         verticalOffset + 1.5, // Look at avatar head level
         Math.cos(cameraState.azimuth) * horizontalDistance
       );
+      const cameraOffset = tempVec1Ref.current;
 
       // Add pan offset to camera position
       targetPosition = pos.clone()
@@ -513,10 +520,11 @@ export function useCameraController({
       }
 
       const raycaster = new THREE.Raycaster();
-      raycaster.set(targetPosition, new THREE.Vector3(0, -1, 0));
+      tempVec1Ref.current.set(0, -1, 0);
+      raycaster.set(targetPosition, tempVec1Ref.current);
       const intersections = raycaster.intersectObjects(cachedPlanesRef.current, true);
       const GROUND_HEIGHT = 0;
-      const minCameraHeight = intersections.length > 0
+      const minCameraHeight = intersections.length > 0 && intersections[0]
         ? intersections[0].point.y + 0.5 // Keep camera 0.5m above ground
         : GROUND_HEIGHT + 0.5;
 

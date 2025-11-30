@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { loadHighResTile } from "../systems/OSMTileLoader";
+import { loadHighResTile, loadLowResTile } from "../systems/OSMTileLoader";
 import type { Region } from "../types/Region";
 import { getDistanceFromCamera, REGION_VISIBLE_DISTANCE } from "../hooks/useVisibility";
 
@@ -16,54 +16,117 @@ export function RegionComponent({ region, position }: RegionProps) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loading, setLoading] = useState(true);
   const lastCheckRef = useRef(0);
+  const currentLODRef = useRef<number>(-1); // Track current LOD to avoid reloading
+  const textureLoadingRef = useRef(false); // Prevent concurrent loads
 
   const REGION_SIZE = 256; // meters
 
-  useEffect(() => {
-    let cancelled = false;
+  // Texture quality thresholds (in meters) - with hysteresis to prevent rapid switching
+  const HIGH_RES_DISTANCE = 120; // Use 512x512 when closer than this
+  const HIGH_RES_DISTANCE_HYSTERESIS = 140; // Switch back to high-res only when closer than this
+  const MEDIUM_RES_DISTANCE = 250; // Use 256x256 between this and HIGH_RES
+  const MEDIUM_RES_DISTANCE_HYSTERESIS = 280; // Switch back to medium-res only when closer than this
 
-    async function loadTile() {
-      try {
-        setLoading(true);
-        console.log(`Loading OSM tile for region "${region.name}":`, {
-          tile_x: region.tile_x,
-          tile_y: region.tile_y,
-          tile_z: region.tile_z,
-          lat: region.latitude,
-          lng: region.longitude,
-        });
-        // Load high resolution tile (2x2 grid = 512x512 pixels)
-        const tileTexture = await loadHighResTile(
-          region.tile_x,
-          region.tile_y,
-          region.tile_z
-        );
-        if (!cancelled) {
-          console.log(`✅ Successfully loaded tile for region "${region.name}"`);
-          setTexture(tileTexture);
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error(`❌ Failed to load region tile for "${region.name}":`, error);
-        if (!cancelled) {
-          setLoading(false);
-        }
+  // Determine texture LOD based on distance with hysteresis
+  const getTextureLOD = (distance: number, currentLOD: number): number => {
+    if (currentLOD === 0) {
+      // Currently high-res: switch to medium only when far enough
+      if (distance > HIGH_RES_DISTANCE_HYSTERESIS) {
+        return 1;
       }
+      return 0;
+    } else if (currentLOD === 1) {
+      // Currently medium-res: switch based on distance with hysteresis
+      if (distance < HIGH_RES_DISTANCE) {
+        return 0; // Switch to high-res
+      } else if (distance > MEDIUM_RES_DISTANCE_HYSTERESIS) {
+        return 2; // Switch to low-res
+      }
+      return 1;
+    } else {
+      // Currently low-res: switch to medium only when close enough
+      if (distance < MEDIUM_RES_DISTANCE) {
+        return 1;
+      }
+      return 2;
     }
+  };
 
-    loadTile();
+  // Load texture based on LOD level - using ref to access latest region values
+  const regionRef = useRef(region);
+  useEffect(() => {
+    regionRef.current = region;
+  }, [region]);
 
-    return () => {
-      cancelled = true;
-    };
+  const loadTextureForLOD = useRef(async (lod: number) => {
+    if (textureLoadingRef.current) return;
+
+    textureLoadingRef.current = true;
+    const currentRegion = regionRef.current;
+
+    try {
+      setLoading(true);
+      let tileTexture: THREE.Texture;
+
+      if (lod === 0) {
+        // High-res: 512x512 (2x2 grid)
+        tileTexture = await loadHighResTile(
+          currentRegion.tile_x,
+          currentRegion.tile_y,
+          currentRegion.tile_z
+        );
+      } else {
+        // Medium/Low-res: 256x256 (single tile)
+        tileTexture = await loadLowResTile(
+          currentRegion.tile_x,
+          currentRegion.tile_y,
+          currentRegion.tile_z
+        );
+      }
+
+      // Ensure texture is properly configured
+      tileTexture.flipY = true;
+      tileTexture.needsUpdate = true;
+
+      // For low-res textures, ensure they cover the same area as high-res
+      // High-res covers 2x2 tiles, low-res covers 1 tile
+      // Reset offset and repeat to ensure consistent mapping
+      tileTexture.offset.set(0, 0);
+      tileTexture.repeat.set(1, 1);
+
+      setTexture(tileTexture);
+      setLoading(false);
+      currentLODRef.current = lod;
+    } catch {
+      // Silently handle errors - texture loading failures shouldn't crash the app
+      setLoading(false);
+    } finally {
+      textureLoadingRef.current = false;
+    }
+  });
+
+  // Initial load - start with medium quality
+  useEffect(() => {
+    loadTextureForLOD.current(1);
   }, [region.tile_x, region.tile_y, region.tile_z]);
 
   useFrame(() => {
-    // Throttle visibility checks to every 200ms (regions are large, less frequent checks)
+    // Throttle visibility checks to every 500ms (regions are large, less frequent checks)
     const now = performance.now();
-    if (now - lastCheckRef.current > 200 && meshRef.current) {
+    if (now - lastCheckRef.current > 500 && meshRef.current) {
       const distance = getDistanceFromCamera(camera, position);
-      meshRef.current.visible = distance < REGION_VISIBLE_DISTANCE;
+      const isVisible = distance < REGION_VISIBLE_DISTANCE;
+      meshRef.current.visible = isVisible;
+
+      // Update texture quality based on distance (LOD) with hysteresis
+      if (isVisible) {
+        const newLOD = getTextureLOD(distance, currentLODRef.current);
+        // Only reload texture if LOD changed
+        if (newLOD !== currentLODRef.current && !textureLoadingRef.current) {
+          loadTextureForLOD.current(newLOD);
+        }
+      }
+
       lastCheckRef.current = now;
     }
   });
@@ -92,11 +155,13 @@ export function RegionComponent({ region, position }: RegionProps) {
           map={texture}
           side={THREE.DoubleSide}
           transparent={false}
+          depthWrite={false}
         />
       ) : (
         <meshStandardMaterial
           color={loading ? "#888888" : "#cccccc"}
           side={THREE.DoubleSide}
+          depthWrite={false}
         />
       )}
     </mesh>

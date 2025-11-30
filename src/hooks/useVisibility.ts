@@ -1,5 +1,3 @@
-import { useRef } from "react";
-import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 export const MAX_VISIBLE_DISTANCE = 500; // Maximum distance to render objects
@@ -8,15 +6,18 @@ export const REGION_VISIBLE_DISTANCE = 400; // Maximum distance to render region
 
 /**
  * Calculate distance from camera to position
+ * Note: Creating Vector3 is cheap, and avoids race conditions with shared state
  */
 export function getDistanceFromCamera(
   camera: THREE.Camera,
   position: [number, number, number] | THREE.Vector3
 ): number {
-  const pos = position instanceof THREE.Vector3
-    ? position
-    : new THREE.Vector3(...position);
-  return camera.position.distanceTo(pos);
+  if (position instanceof THREE.Vector3) {
+    return camera.position.distanceTo(position);
+  } else {
+    // Create vector inline - this is cheap and avoids race conditions
+    return camera.position.distanceTo(new THREE.Vector3(...position));
+  }
 }
 
 /**

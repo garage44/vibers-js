@@ -67,6 +67,10 @@ export function PrimComponent({ prim, selected = false, onSelect, onRightClick }
     [prim.color_r, prim.color_g, prim.color_b]
   );
 
+  // Track previous values to avoid unnecessary updates
+  const prevPositionRef = useRef<[number, number, number]>([prim.position_x, prim.position_y, prim.position_z]);
+  const prevRotationRef = useRef<[number, number, number]>([prim.rotation_x, prim.rotation_y, prim.rotation_z]);
+
   useFrame(() => {
     if (!meshRef.current) return;
 
@@ -87,17 +91,30 @@ export function PrimComponent({ prim, selected = false, onSelect, onRightClick }
       lastCheckRef.current = now;
     }
 
+    // Only update position/rotation if they've changed
     if (meshRef.current.visible) {
-      meshRef.current.position.set(
-        prim.position_x,
-        prim.position_y,
-        prim.position_z
-      );
-      meshRef.current.rotation.set(
-        prim.rotation_x,
-        prim.rotation_y,
-        prim.rotation_z
-      );
+      const currentPos: [number, number, number] = [prim.position_x, prim.position_y, prim.position_z];
+      const currentRot: [number, number, number] = [prim.rotation_x, prim.rotation_y, prim.rotation_z];
+
+      const posChanged =
+        currentPos[0] !== prevPositionRef.current[0] ||
+        currentPos[1] !== prevPositionRef.current[1] ||
+        currentPos[2] !== prevPositionRef.current[2];
+
+      const rotChanged =
+        currentRot[0] !== prevRotationRef.current[0] ||
+        currentRot[1] !== prevRotationRef.current[1] ||
+        currentRot[2] !== prevRotationRef.current[2];
+
+      if (posChanged) {
+        meshRef.current.position.set(...currentPos);
+        prevPositionRef.current = currentPos;
+      }
+
+      if (rotChanged) {
+        meshRef.current.rotation.set(...currentRot);
+        prevRotationRef.current = currentRot;
+      }
     }
   });
 

@@ -30,18 +30,20 @@ export async function loadOSMTile(
   }
 
   const url = getOSMTileUrl(x, y, z);
-  console.log(`Fetching OSM tile from: ${url}`);
+  // Removed console.log for performance
   const texture = await new Promise<THREE.Texture>((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.load(
       url,
       (texture) => {
-        console.log(`✅ Loaded tile texture: ${cacheKey}, size: ${texture.image.width}x${texture.image.height}`);
+        // Removed console.log for performance
         // OSM tiles use standard image coordinates (Y-down), Three.js uses Y-up
         // For a plane rotated -90 degrees on X axis (horizontal plane), we need to flip Y
         texture.flipY = true;
+        // Use lower quality filtering for better performance (like the example)
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false; // Disable mipmaps for better performance
         texture.wrapS = THREE.ClampToEdgeWrapping;
         texture.wrapT = THREE.ClampToEdgeWrapping;
         texture.format = THREE.RGBAFormat;
@@ -58,6 +60,17 @@ export async function loadOSMTile(
 
   TILE_CACHE.set(cacheKey, texture);
   return texture;
+}
+
+/**
+ * Load a single tile (256x256) - lower quality but faster
+ */
+export async function loadLowResTile(
+  x: number,
+  y: number,
+  z: number
+): Promise<THREE.Texture> {
+  return loadOSMTile(x, y, z);
 }
 
 /**
@@ -107,14 +120,15 @@ export async function loadHighResTile(
   const ctx = canvas.getContext('2d')!;
 
   // Draw tiles in 2x2 grid
-  // Top row
+  // Note: OSM tiles use Y-down coordinates, but we need Y-up for Three.js
+  // Top row (in screen space, which is bottom row in OSM)
   if (tiles[0].image.complete) {
     ctx.drawImage(tiles[0].image, 0, 0, 256, 256);
   }
   if (tiles[1].image.complete) {
     ctx.drawImage(tiles[1].image, 256, 0, 256, 256);
   }
-  // Bottom row
+  // Bottom row (in screen space, which is top row in OSM)
   if (tiles[2].image.complete) {
     ctx.drawImage(tiles[2].image, 0, 256, 256, 256);
   }
@@ -125,16 +139,16 @@ export async function loadHighResTile(
   // Create texture from combined canvas
   const combinedTexture = new THREE.CanvasTexture(canvas);
   combinedTexture.flipY = true;
-  // Use mipmaps for better quality at different distances
-  combinedTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  // Use simpler filtering for better performance (matching three.js example approach)
+  combinedTexture.minFilter = THREE.LinearFilter;
   combinedTexture.magFilter = THREE.LinearFilter;
   combinedTexture.wrapS = THREE.ClampToEdgeWrapping;
   combinedTexture.wrapT = THREE.ClampToEdgeWrapping;
   combinedTexture.format = THREE.RGBAFormat;
-  combinedTexture.generateMipmaps = true;
+  combinedTexture.generateMipmaps = false; // Disable mipmaps for better performance
   combinedTexture.needsUpdate = true;
 
-  console.log(`✅ Created high-res texture: ${cacheKey}, size: 512x512`);
+  // Removed console.log for performance
 
   TILE_CACHE.set(cacheKey, combinedTexture);
   return combinedTexture;
@@ -147,4 +161,3 @@ export function clearTileCache(): void {
   TILE_CACHE.forEach((texture) => texture.dispose());
   TILE_CACHE.clear();
 }
-
