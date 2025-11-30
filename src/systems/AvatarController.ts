@@ -3,8 +3,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { AvatarState } from "../types/Region";
 
-const AVATAR_HEIGHT = 2.0; // Height of avatar (from ground to top of head)
-const AVATAR_RADIUS = 0.3; // Collision radius
+const AVATAR_HEIGHT = 0.6; // Height of avatar (from ground to top of head) - scaled for smaller robot
+const AVATAR_RADIUS = 0.1; // Collision radius - scaled proportionally
 
 interface UseAvatarControllerProps {
   onStateChange?: (state: AvatarState) => void;
@@ -28,7 +28,7 @@ export function useAvatarController({
     isFlying: false,
     isWalking: false,
   });
-  
+
   // Update position if initialPosition changes
   useEffect(() => {
     stateRef.current.position = [...initialPosition];
@@ -118,6 +118,7 @@ export function useAvatarController({
     }
 
     // Handle rotation
+    // A/Left rotates left (counter-clockwise = positive), D/Right rotates right (clockwise = negative)
     if (moveLeft || moveRight) {
       const rotationDelta = (moveLeft ? 1 : -1) * ROTATION_SPEED * delta;
       avatarState.rotation += rotationDelta;
@@ -129,7 +130,7 @@ export function useAvatarController({
     const rayOrigin = new THREE.Vector3(pos[0], pos[1] + 20, pos[2]);
     const rayDirection = new THREE.Vector3(0, -1, 0);
     raycaster.set(rayOrigin, rayDirection);
-    
+
     // Cache plane objects - only update cache every 0.5 seconds to avoid expensive traversals
     const now = performance.now();
     if (now - lastCacheUpdateRef.current > 500 || cachedPlanesRef.current.length === 0) {
@@ -141,11 +142,11 @@ export function useAvatarController({
       });
       lastCacheUpdateRef.current = now;
     }
-    
+
     const intersections = raycaster.intersectObjects(cachedPlanesRef.current, true);
-    
+
     let minHeight = GROUND_HEIGHT + AVATAR_HEIGHT / 2; // Default fallback
-    
+
     if (intersections.length > 0) {
       // Find the highest intersection point (closest to avatar)
       let highestPoint = intersections[0].point.y;
@@ -207,4 +208,3 @@ export function useAvatarController({
 
   return stateRef.current;
 }
-

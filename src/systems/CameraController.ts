@@ -4,14 +4,14 @@ import * as THREE from "three";
 
 /**
  * Second Life-style camera controller
- * 
+ *
  * Default Mode (Avatar-Following):
  * - Left Mouse Button + Drag: Rotate camera around avatar (orbit)
  * - Shift + Left Mouse Button + Drag: Pan camera (move camera position)
  * - Middle Mouse Button + Drag: Pan camera (alternative)
  * - Mouse Wheel: Zoom in/out
  * - Escape: Reset camera pan offset
- * 
+ *
  * Free Camera Mode (FPS-style, Three.js best practices):
  * - Alt + Left Click: Enter free camera mode
  * - Right Mouse Button + Drag: Mouse look (rotate camera)
@@ -22,9 +22,9 @@ import * as THREE from "three";
  * - Ctrl: Move slower
  * - Mouse Wheel: Zoom in/out (when not moving)
  * - Escape: Exit free camera mode, return to avatar-following
- * 
+ *
  * - Right Mouse Button: Context menu (handled in World.tsx)
- * 
+ *
  * Note: Camera rotation is disabled when dragging prims/gizmo
  */
 
@@ -52,19 +52,19 @@ export function useCameraController({
   enabled = true,
 }: UseCameraControllerProps) {
   const { camera, scene } = useThree();
-  
+
   const isDraggingRef = useRef(false);
   const isPanningRef = useRef(false);
   const panStartedWithMiddleButtonRef = useRef(false); // Track if panning started with middle mouse
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const cameraModeRef = useRef<CameraMode>('avatar'); // 'avatar' or 'free'
-  
+
   // Helper function to update camera mode and sync with window
   const setCameraMode = (mode: CameraMode) => {
     cameraModeRef.current = mode;
     (window as any).__cameraMode = mode;
   };
-  
+
   // Expose camera mode to window for avatar controller to check
   useEffect(() => {
     (window as any).__cameraMode = cameraModeRef.current;
@@ -84,7 +84,9 @@ export function useCameraController({
   const cachedPlanesRef = useRef<THREE.Object3D[]>([]);
   const lastCacheUpdateRef = useRef(0);
   const raycasterRef = useRef(new THREE.Raycaster());
-  
+  // Smooth avatar position to prevent camera wobble
+  const smoothedAvatarPositionRef = useRef(new THREE.Vector3(...avatarPosition));
+
   // Free camera movement settings (Three.js best practices)
   const FREE_CAMERA_SPEED = 20; // Base speed in m/s
   const FREE_CAMERA_SPEED_FAST = 50; // Fast speed (Shift)
@@ -92,7 +94,7 @@ export function useCameraController({
   const MOUSE_SENSITIVITY = 0.002; // Mouse look sensitivity
   const ACCELERATION = 50; // Acceleration rate
   const DECELERATION = 30; // Deceleration rate
-  
+
   // Free camera state
   const freeCameraVelocityRef = useRef(new THREE.Vector3(0, 0, 0)); // Current velocity
   const freeCameraRotationRef = useRef({ pitch: 0, yaw: 0 }); // Camera rotation angles
@@ -104,7 +106,7 @@ export function useCameraController({
     const handleMouseDown = (e: MouseEvent) => {
       // Don't handle camera if clicking on UI elements
       const target = e.target as HTMLElement;
-      if (target.closest('.build-tool') || target.closest('.context-menu') || 
+      if (target.closest('.build-tool') || target.closest('.context-menu') ||
           target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON') {
         return;
       }
@@ -121,7 +123,7 @@ export function useCameraController({
         e.preventDefault();
         return;
       }
-      
+
       // Left mouse button for camera rotation or panning
       if (e.button === 0) {
         // Alt+Click: Enter free camera mode and focus on clicked point
@@ -132,9 +134,9 @@ export function useCameraController({
             const mouse = new THREE.Vector2();
             mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-            
+
             raycasterRef.current.setFromCamera(mouse, camera);
-            
+
             // Try to find intersection with scene objects or ground
             const objects: THREE.Object3D[] = [];
             scene.traverse((obj) => {
@@ -142,7 +144,7 @@ export function useCameraController({
                 objects.push(obj);
               }
             });
-            
+
             const intersections = raycasterRef.current.intersectObjects(objects, true);
             if (intersections.length > 0) {
               // Focus on the clicked object
@@ -153,23 +155,23 @@ export function useCameraController({
               camera.getWorldDirection(direction);
               freeCameraFocusRef.current = camera.position.clone().add(direction.multiplyScalar(10));
             }
-            
+
             setCameraMode('free');
             cameraStateRef.current.panOffset.set(0, 0, 0); // Reset pan offset
             // Store current camera position for free camera mode
             freeCameraPositionRef.current = camera.position.clone();
             freeCameraVelocityRef.current.set(0, 0, 0); // Reset velocity
-            
+
             // Initialize rotation from current camera orientation
             const euler = new THREE.Euler().setFromQuaternion(camera.quaternion);
             freeCameraRotationRef.current.pitch = euler.x;
             freeCameraRotationRef.current.yaw = euler.y;
-            
+
             e.preventDefault();
             return;
           }
         }
-        
+
         if (e.shiftKey) {
           // Shift+Left drag for panning (most reliable method)
           isPanningRef.current = true;
@@ -200,17 +202,17 @@ export function useCameraController({
       if (cameraModeRef.current === 'free' && isRightMouseDownRef.current) {
         const deltaX = e.clientX - lastMousePosRef.current.x;
         const deltaY = e.clientY - lastMousePosRef.current.y;
-        
+
         // Update camera rotation (yaw and pitch)
         freeCameraRotationRef.current.yaw -= deltaX * MOUSE_SENSITIVITY;
         freeCameraRotationRef.current.pitch -= deltaY * MOUSE_SENSITIVITY;
-        
+
         // Clamp pitch to prevent gimbal lock
         freeCameraRotationRef.current.pitch = Math.max(
           -Math.PI / 2 + 0.1,
           Math.min(Math.PI / 2 - 0.1, freeCameraRotationRef.current.pitch)
         );
-        
+
         lastMousePosRef.current = { x: e.clientX, y: e.clientY };
         e.preventDefault();
         return;
@@ -242,11 +244,11 @@ export function useCameraController({
         camera.getWorldDirection(new THREE.Vector3()); // Forward
         right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
         up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-        
+
         const panDelta = new THREE.Vector3()
           .addScaledVector(right, -deltaX * PAN_SENSITIVITY)
           .addScaledVector(up, deltaY * PAN_SENSITIVITY);
-        
+
         cameraStateRef.current.panOffset.add(panDelta);
       } else if (isDraggingRef.current) {
         // Rotate camera around avatar (azimuth)
@@ -308,7 +310,7 @@ export function useCameraController({
       if (e.key === 'Control' || e.ctrlKey) {
         (window as any).__ctrlPressed = true;
       }
-      
+
       // Only handle movement keys in free camera mode
       if (cameraModeRef.current === 'free') {
         const key = e.key.toLowerCase();
@@ -328,7 +330,7 @@ export function useCameraController({
       if (e.key === 'Control' || e.key === 'ControlLeft' || e.key === 'ControlRight') {
         (window as any).__ctrlPressed = false;
       }
-      
+
       if (cameraModeRef.current === 'free') {
         const key = e.key.toLowerCase();
         keysRef.current.delete(key);
@@ -342,7 +344,7 @@ export function useCameraController({
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
-      
+
       if (e.key === 'Escape') {
         if (cameraModeRef.current === 'free') {
           // Exit free camera mode, return to avatar-following
@@ -384,6 +386,11 @@ export function useCameraController({
     if (!enabled) return;
 
     const cameraState = cameraStateRef.current;
+
+    // Smooth the avatar position to prevent camera wobble from position updates
+    const currentAvatarPos = new THREE.Vector3(...avatarPosition);
+    smoothedAvatarPositionRef.current.lerp(currentAvatarPos, 0.3);
+
     let targetPosition: THREE.Vector3;
     let lookAtPosition: THREE.Vector3;
 
@@ -392,82 +399,83 @@ export function useCameraController({
       if (!freeCameraPositionRef.current) {
         freeCameraPositionRef.current = camera.position.clone();
       }
-      
+
       // Apply mouse look rotation
       const rotation = freeCameraRotationRef.current;
       camera.rotation.order = 'YXZ'; // Yaw (Y), Pitch (X), Roll (Z)
       camera.rotation.y = rotation.yaw;
       camera.rotation.x = rotation.pitch;
-      
+
       // Handle WASD movement with acceleration/deceleration
       const keys = keysRef.current;
       const shiftPressed = (window as any).__shiftPressed === true;
       const ctrlPressed = (window as any).__ctrlPressed === true;
-      
+
       // Determine speed based on modifier keys
       let currentSpeed = FREE_CAMERA_SPEED;
       if (shiftPressed) currentSpeed = FREE_CAMERA_SPEED_FAST;
       if (ctrlPressed) currentSpeed = FREE_CAMERA_SPEED_SLOW;
-      
+
       // Calculate movement direction based on camera orientation
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
       forward.y = 0; // Keep movement horizontal (unless moving up/down)
       forward.normalize();
-      
+
       const right = new THREE.Vector3();
       right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
       right.y = 0; // Keep movement horizontal
       right.normalize();
-      
+
       const up = new THREE.Vector3(0, 1, 0);
-      
+
       // Calculate desired velocity based on input
       const desiredVelocity = new THREE.Vector3();
-      
+
       // Horizontal movement
       if (keys.has("w") || keys.has("arrowup")) desiredVelocity.add(forward);
       if (keys.has("s") || keys.has("arrowdown")) desiredVelocity.sub(forward);
       if (keys.has("d") || keys.has("arrowright")) desiredVelocity.add(right);
       if (keys.has("a") || keys.has("arrowleft")) desiredVelocity.sub(right);
-      
+
       // Vertical movement
       if (keys.has(" ") || keys.has("space") || keys.has("pageup")) desiredVelocity.add(up);
       if (keys.has("q") || keys.has("pagedown")) desiredVelocity.sub(up);
-      
+
       // Normalize desired velocity
       if (desiredVelocity.length() > 0) {
         desiredVelocity.normalize();
         desiredVelocity.multiplyScalar(currentSpeed);
       }
-      
+
       // Apply acceleration/deceleration for smooth movement
       const velocity = freeCameraVelocityRef.current;
       const acceleration = desiredVelocity.length() > 0 ? ACCELERATION : DECELERATION;
       const speedDiff = desiredVelocity.clone().sub(velocity);
       const accelVector = speedDiff.normalize().multiplyScalar(acceleration * delta);
-      
+
       if (speedDiff.length() > accelVector.length() * delta) {
         velocity.add(accelVector);
       } else {
         velocity.copy(desiredVelocity);
       }
-      
+
       // Apply velocity to position
       const movement = velocity.clone().multiplyScalar(delta);
       freeCameraPositionRef.current.add(movement);
-      
+
       // Set target position and look direction
       targetPosition = freeCameraPositionRef.current.clone();
-      
+
       // Look direction is already set by camera rotation, so calculate lookAt point
       const lookDirection = new THREE.Vector3();
       camera.getWorldDirection(lookDirection);
       lookAtPosition = targetPosition.clone().add(lookDirection.multiplyScalar(10));
     } else {
       // Avatar-following mode: orbit around avatar
-      const pos = avatarPosition;
-      
+      // Use smoothed avatar position to prevent wobble
+      const pos = smoothedAvatarPositionRef.current;
+
       // Calculate camera position using spherical coordinates
       const horizontalDistance = cameraState.distance * Math.cos(cameraState.pitch);
       const verticalOffset = cameraState.distance * Math.sin(cameraState.pitch);
@@ -480,16 +488,17 @@ export function useCameraController({
       );
 
       // Add pan offset to camera position
-      targetPosition = new THREE.Vector3(...pos)
+      targetPosition = pos.clone()
         .add(cameraOffset)
         .add(cameraState.panOffset);
-      
-      lookAtPosition = new THREE.Vector3(...pos);
+
+      lookAtPosition = pos.clone();
       lookAtPosition.y += 1.5;
     }
 
     // Only check ground collision in avatar mode when not flying or when close to ground
-    if (cameraModeRef.current === 'avatar' && !isFlying && avatarPosition[1] < 10) {
+    // Skip collision check when camera is very close to avatar (likely looking at upper body/head)
+    if (cameraModeRef.current === 'avatar' && !isFlying && avatarPosition[1] < 10 && cameraState.distance > 4) {
       // Check if camera would go below ground level
       // Cache plane objects - only update cache every 0.5 seconds
       const now = performance.now();
@@ -502,12 +511,12 @@ export function useCameraController({
         });
         lastCacheUpdateRef.current = now;
       }
-      
+
       const raycaster = new THREE.Raycaster();
       raycaster.set(targetPosition, new THREE.Vector3(0, -1, 0));
       const intersections = raycaster.intersectObjects(cachedPlanesRef.current, true);
       const GROUND_HEIGHT = 0;
-      const minCameraHeight = intersections.length > 0 
+      const minCameraHeight = intersections.length > 0
         ? intersections[0].point.y + 0.5 // Keep camera 0.5m above ground
         : GROUND_HEIGHT + 0.5;
 
@@ -530,10 +539,17 @@ export function useCameraController({
       camera.lookAt(lookAtPosition);
     } else {
       // Avatar-following mode: use lerp for smooth following
-      const lerpFactor = isFlying ? 0.5 : 0.2;
+      // Use delta-based lerp for consistent smoothing regardless of framerate
+      const lerpSpeed = isFlying ? 8.0 : 4.0; // Speed in units per second
+      const lerpFactor = 1 - Math.exp(-lerpSpeed * delta);
       camera.position.lerp(targetPosition, lerpFactor);
-      camera.lookAt(lookAtPosition);
+
+      // Smooth lookAt to prevent wobble
+      const currentLookAt = new THREE.Vector3();
+      camera.getWorldDirection(currentLookAt);
+      currentLookAt.multiplyScalar(10).add(camera.position);
+      currentLookAt.lerp(lookAtPosition, lerpFactor);
+      camera.lookAt(currentLookAt);
     }
   });
 }
-

@@ -18,14 +18,14 @@ interface BuildToolProps {
 
 const PRIM_SHAPES: PrimShape[] = ["box", "sphere", "cylinder", "cone", "torus"];
 
-export function BuildTool({ 
-  region, 
-  selectedPrim, 
-  onPrimSelect, 
-  onPrimsChange, 
+export function BuildTool({
+  region,
+  selectedPrim,
+  onPrimSelect,
+  onPrimsChange,
   avatarPosition,
-  onEditingStateChange, 
-  gizmoMode = 'translate', 
+  onEditingStateChange,
+  gizmoMode = 'translate',
   editingPrim: externalEditingPrim,
   onUpdatePrim
 }: BuildToolProps) {
@@ -35,7 +35,8 @@ export function BuildTool({
   const [createMode, setCreateMode] = useState(false);
   const [editingPrim, setEditingPrim] = useState<Prim | null>(null);
   const updateTimeoutRef = useRef<number | null>(null);
-  
+  const createModeRef = useRef(false);
+
   // Auto-edit when prim is selected (Second Life style)
   useEffect(() => {
     if (selectedPrim && !externalEditingPrim) {
@@ -44,8 +45,10 @@ export function BuildTool({
       // Automatically enter edit mode when a prim is selected
       setEditingPrim(latestPrim);
       setCreateMode(false);
+      createModeRef.current = false;
       onEditingStateChange?.(true, latestPrim);
-    } else if (!selectedPrim && !externalEditingPrim) {
+    } else if (!selectedPrim && !externalEditingPrim && !createModeRef.current) {
+      // Only clear editingPrim and createMode if we're not explicitly in create mode
       setEditingPrim(null);
       setCreateMode(false);
       onEditingStateChange?.(false, null);
@@ -60,8 +63,9 @@ export function BuildTool({
       // Always update to ensure we have the latest data
       setEditingPrim(latestPrim);
       setCreateMode(false);
+      createModeRef.current = false;
       onEditingStateChange?.(true, latestPrim);
-    } else if (externalEditingPrim === null && !selectedPrim) {
+    } else if (externalEditingPrim === null && !selectedPrim && !createModeRef.current) {
       setEditingPrim(null);
       setCreateMode(false);
       onEditingStateChange?.(false, null);
@@ -125,6 +129,7 @@ export function BuildTool({
     try {
       await PrimService.createPrim({ ...data, region_id: region.id });
       await loadPrims();
+      createModeRef.current = false;
       setCreateMode(false);
       onPrimsChange();
     } catch (error) {
@@ -242,30 +247,30 @@ export function BuildTool({
 
       {/* Gizmo Mode Indicator */}
       {editingPrim && (
-        <div style={{ 
-          padding: "8px 10px", 
-          backgroundColor: "rgba(74, 144, 226, 0.2)", 
+        <div style={{
+          padding: "8px 10px",
+          backgroundColor: "rgba(74, 144, 226, 0.2)",
           borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
           fontSize: "11px"
         }}>
           <div style={{ fontWeight: "bold", marginBottom: "4px" }}>Gizmo Mode:</div>
           <div style={{ display: "flex", gap: "4px" }}>
-            <span style={{ 
-              padding: "2px 6px", 
+            <span style={{
+              padding: "2px 6px",
               borderRadius: "2px",
               backgroundColor: gizmoMode === 'translate' ? "rgba(255, 255, 255, 0.3)" : "transparent"
             }}>
               T/1: Move
             </span>
-            <span style={{ 
-              padding: "2px 6px", 
+            <span style={{
+              padding: "2px 6px",
               borderRadius: "2px",
               backgroundColor: gizmoMode === 'rotate' ? "rgba(255, 255, 255, 0.3)" : "transparent"
             }}>
               R/2: Rotate
             </span>
-            <span style={{ 
-              padding: "2px 6px", 
+            <span style={{
+              padding: "2px 6px",
               borderRadius: "2px",
               backgroundColor: gizmoMode === 'scale' ? "rgba(255, 255, 255, 0.3)" : "transparent"
             }}>
@@ -282,6 +287,7 @@ export function BuildTool({
             <strong>Create Prim</strong>
             <button
               onClick={() => {
+                createModeRef.current = false;
                 setCreateMode(false);
               }}
               style={{
@@ -301,6 +307,7 @@ export function BuildTool({
             initialPosition={getDefaultCreatePosition()}
             onSubmit={(data) => handleCreatePrim(data)}
             onCancel={() => {
+              createModeRef.current = false;
               setCreateMode(false);
             }}
           />
@@ -313,23 +320,24 @@ export function BuildTool({
           <div style={{ marginBottom: "10px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
             <strong>Edit: {editingPrim.name}</strong>
             <div style={{ display: "flex", gap: "4px" }}>
-              <button
-                onClick={() => {
-                  onPrimSelect(null);
-                  setCreateMode(true);
-                }}
-                style={{
-                  padding: "4px 8px",
-                  backgroundColor: "#4a90e2",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "3px",
-                  cursor: "pointer",
-                  fontSize: "11px",
-                }}
-              >
-                New Prim
-              </button>
+            <button
+              onClick={() => {
+                createModeRef.current = true;
+                onPrimSelect(null);
+                setCreateMode(true);
+              }}
+              style={{
+                padding: "4px 8px",
+                backgroundColor: "#4a90e2",
+                color: "white",
+                border: "none",
+                borderRadius: "3px",
+                cursor: "pointer",
+                fontSize: "11px",
+              }}
+            >
+              New Prim
+            </button>
               <button
                 onClick={() => onPrimSelect(null)}
                 style={{
@@ -374,7 +382,11 @@ export function BuildTool({
             Select a prim to edit, or click "Create Prim" to add a new one.
           </div>
           <button
-            onClick={() => setCreateMode(true)}
+            onClick={() => {
+              createModeRef.current = true;
+              onPrimSelect(null);
+              setCreateMode(true);
+            }}
             style={{
               width: "100%",
               padding: "8px",
@@ -392,8 +404,8 @@ export function BuildTool({
       )}
 
       {/* Prim List */}
-      <div style={{ 
-        marginTop: "10px", 
+      <div style={{
+        marginTop: "10px",
         padding: "10px",
         borderTop: "1px solid rgba(255, 255, 255, 0.1)",
       }}>

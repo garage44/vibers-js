@@ -1,8 +1,9 @@
 import { useRef, useEffect, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { loadHighResTile } from "../systems/OSMTileLoader";
 import type { Region } from "../types/Region";
+import { getDistanceFromCamera, REGION_VISIBLE_DISTANCE } from "../hooks/useVisibility";
 
 interface RegionProps {
   region: Region;
@@ -11,8 +12,10 @@ interface RegionProps {
 
 export function RegionComponent({ region, position }: RegionProps) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loading, setLoading] = useState(true);
+  const lastCheckRef = useRef(0);
 
   const REGION_SIZE = 256; // meters
 
@@ -56,13 +59,19 @@ export function RegionComponent({ region, position }: RegionProps) {
   }, [region.tile_x, region.tile_y, region.tile_z]);
 
   useFrame(() => {
-    // Region plane stays static
+    // Throttle visibility checks to every 200ms (regions are large, less frequent checks)
+    const now = performance.now();
+    if (now - lastCheckRef.current > 200 && meshRef.current) {
+      const distance = getDistanceFromCamera(camera, position);
+      meshRef.current.visible = distance < REGION_VISIBLE_DISTANCE;
+      lastCheckRef.current = now;
+    }
   });
 
   return (
-    <mesh 
-      ref={meshRef} 
-      position={position} 
+    <mesh
+      ref={meshRef}
+      position={position}
       rotation={[-Math.PI / 2, 0, 0]}
       receiveShadow
       castShadow={false}
@@ -79,13 +88,13 @@ export function RegionComponent({ region, position }: RegionProps) {
     >
       <planeGeometry args={[REGION_SIZE, REGION_SIZE]} />
       {texture ? (
-        <meshBasicMaterial 
-          map={texture} 
+        <meshBasicMaterial
+          map={texture}
           side={THREE.DoubleSide}
           transparent={false}
         />
       ) : (
-        <meshStandardMaterial 
+        <meshStandardMaterial
           color={loading ? "#888888" : "#cccccc"}
           side={THREE.DoubleSide}
         />
@@ -93,4 +102,3 @@ export function RegionComponent({ region, position }: RegionProps) {
     </mesh>
   );
 }
-

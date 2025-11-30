@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState, useMemo, useRef, useCallback } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { RegionComponent } from "./Region";
 import { Avatar } from "./Avatar";
@@ -7,6 +7,7 @@ import { Ocean } from "./Ocean";
 import { PrimComponent } from "./Prim";
 import { BuildTool } from "./BuildTool";
 import { Gizmo, type GizmoMode } from "./Gizmo";
+import { FPSCounter, StatsUpdaterComponent } from "./FPSCounter";
 import { useAvatarController } from "../systems/AvatarController";
 import { useCameraController } from "../systems/CameraController";
 import { RegionService } from "../services/RegionService";
@@ -39,7 +40,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
   const { camera, scene } = useThree();
   const raycasterRef = useRef(new THREE.Raycaster());
   const mouseRef = useRef(new THREE.Vector2());
-  
+
   // Calculate initial avatar position based on first region
   const initialPosition = useMemo<[number, number, number]>(() => {
     if (regions.length > 0) {
@@ -71,50 +72,16 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
     enabled: true,
   });
 
-  // Configure sun light shadows - improved quality
-  useEffect(() => {
-    if (sunLightRef.current) {
-      const light = sunLightRef.current;
-      
-      // Enable shadow casting
-      light.castShadow = true;
-      
-      // Increased shadow map size for better quality
-      light.shadow.mapSize.width = 8192;
-      light.shadow.mapSize.height = 8192;
-      
-      // Tighter shadow camera bounds for better resolution
-      light.shadow.camera.left = -200;
-      light.shadow.camera.right = 200;
-      light.shadow.camera.top = 200;
-      light.shadow.camera.bottom = -200;
-      light.shadow.camera.near = 0.5;
-      light.shadow.camera.far = 500;
-      
-      // Shadow bias to prevent shadow acne
-      light.shadow.bias = -0.0001;
-      light.shadow.normalBias = 0.02;
-      
-      // Increased soft shadow radius for smoother shadows
-      light.shadow.radius = 12;
-      
-      // Update projection matrix after setting camera bounds
-      light.shadow.camera.updateProjectionMatrix();
-      
-      // Set shadow camera target to scene center
-      light.target.position.set(0, 0, 0);
-      light.target.updateMatrixWorld();
-    }
-  }, []);
+  // Shadows disabled for performance - removed shadow configuration
 
   // Handle left-click to deselect prims when clicking empty space (Second Life style)
   useEffect(() => {
     let clickHandled = false;
-    
+
     const handleClick = (e: MouseEvent) => {
       // Reset flag
       clickHandled = false;
-      
+
       // Don't handle clicks on UI elements
       const target = e.target as HTMLElement;
       if (target.closest('.build-tool') || target.closest('.context-menu')) {
@@ -133,7 +100,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
         if ((window as any).__gizmoClicked) {
           return;
         }
-        
+
         if (!clickHandled) {
           // No prim was clicked, check what we clicked on
           const rect = canvas.getBoundingClientRect();
@@ -147,15 +114,15 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
           const gizmoMeshes: THREE.Object3D[] = [];
           const primMeshes: THREE.Object3D[] = [];
           const regionMeshes: THREE.Object3D[] = [];
-          
+
           scene.traverse((object) => {
             if (object instanceof THREE.Mesh) {
               allMeshes.push(object);
-              
+
               // Check for gizmo meshes (MeshBasicMaterial with gizmo colors)
               if (object.material instanceof THREE.MeshBasicMaterial) {
                 const color = object.material.color;
-                const isGizmoColor = 
+                const isGizmoColor =
                   (color.r > 0.9 && color.g < 0.1 && color.b < 0.1) || // Red
                   (color.r < 0.1 && color.g > 0.9 && color.b < 0.1) || // Green
                   (color.r < 0.1 && color.g < 0.1 && color.b > 0.9) || // Blue
@@ -165,7 +132,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
                   gizmoMeshes.push(object);
                 }
               }
-              
+
               // Check for prim meshes (not gizmo, not region)
               const isPrimMesh = prims.some((prim) => {
                 const expectedPos = new THREE.Vector3(prim.position_x, prim.position_y, prim.position_z);
@@ -174,7 +141,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
               if (isPrimMesh && !(object.material instanceof THREE.MeshBasicMaterial)) {
                 primMeshes.push(object);
               }
-              
+
               // Check for region/ground planes (PlaneGeometry)
               if (object.geometry instanceof THREE.PlaneGeometry) {
                 regionMeshes.push(object);
@@ -183,26 +150,26 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
           });
 
           const allIntersections = raycasterRef.current.intersectObjects(allMeshes, true);
-          
+
           // If no intersections at all, deselect (clicked on sky/empty space)
           if (allIntersections.length === 0) {
             onDeselectPrim();
             return;
           }
-          
+
           // Check what the first intersection is
           const firstIntersection = allIntersections[0];
           if (!firstIntersection) {
             onDeselectPrim();
             return;
           }
-          
+
           const clickedObject = firstIntersection.object;
-          
+
           // Check if clicking on gizmo first (gizmos use MeshBasicMaterial with specific colors)
           if (clickedObject instanceof THREE.Mesh && clickedObject.material instanceof THREE.MeshBasicMaterial) {
             const color = clickedObject.material.color;
-            const isGizmoColor = 
+            const isGizmoColor =
               (color.r > 0.9 && color.g < 0.1 && color.b < 0.1) || // Red
               (color.r < 0.1 && color.g > 0.9 && color.b < 0.1) || // Green
               (color.r < 0.1 && color.g < 0.1 && color.b > 0.9) || // Blue
@@ -212,32 +179,32 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
               return; // Don't deselect if clicking gizmo
             }
           }
-          
+
           // If clicking on region/ground (PlaneGeometry), always deselect
           // This must come before prim check to ensure region clicks always deselect
           if (clickedObject instanceof THREE.Mesh) {
             const geometry = clickedObject.geometry;
-            const isPlaneGeometry = 
-              geometry instanceof THREE.PlaneGeometry || 
+            const isPlaneGeometry =
+              geometry instanceof THREE.PlaneGeometry ||
               geometry.constructor.name === 'PlaneGeometry';
-            
+
             if (isPlaneGeometry) {
               onDeselectPrim();
               return;
             }
           }
-          
+
           // Don't deselect if clicking on a prim (shouldn't happen since clickHandled should be true, but double-check)
           // Check by geometry type - prims use BoxGeometry, SphereGeometry, etc., NOT PlaneGeometry
           if (clickedObject instanceof THREE.Mesh) {
             const geometry = clickedObject.geometry;
-            const isPrimGeometry = 
+            const isPrimGeometry =
               geometry instanceof THREE.BoxGeometry ||
               geometry instanceof THREE.SphereGeometry ||
               geometry instanceof THREE.CylinderGeometry ||
               geometry instanceof THREE.ConeGeometry ||
               geometry instanceof THREE.TorusGeometry;
-            
+
             // Only check for prim if it's a prim geometry type
             if (isPrimGeometry && !(clickedObject.material instanceof THREE.MeshBasicMaterial)) {
               // Double-check by position to make sure it's actually a prim
@@ -250,7 +217,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
               }
             }
           }
-          
+
           // Deselect for anything else (region, ocean, etc.)
           // This includes PlaneGeometry (regions) and any other non-prim, non-gizmo objects
           onDeselectPrim();
@@ -262,7 +229,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
     (window as any).__primClicked = () => {
       clickHandled = true;
     };
-    
+
     // Handle region clicks (called from RegionComponent)
     (window as any).__onRegionClick = () => {
       // Deselect when clicking on region
@@ -284,7 +251,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
         const loadedRegions = await RegionService.getRegions();
         console.log("Loaded regions:", loadedRegions);
         setRegions(loadedRegions);
-        
+
         // Position avatar on first region (center of the region)
         if (loadedRegions.length > 0) {
           // Calculate the position of the first region in the grid
@@ -300,7 +267,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
             2.2, // 2 meters above region (which is 0.2m above water)
             regionZ, // Z position of region center
           ];
-          
+
           console.log("Positioning avatar at region center:", regionPosition);
           setAvatarState(prev => ({
             ...prev,
@@ -326,6 +293,9 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
 
   return (
     <>
+      {/* Stats updater - must be inside Canvas for useFrame */}
+      <StatsUpdaterComponent />
+
       {/* Day/Night Cycle */}
       <DayNightCycle
         sunLightRef={sunLightRef}
@@ -333,25 +303,15 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
         isDay={isDay}
       />
 
-      {/* Sun - Main directional light with shadows (position updated by DayNightCycle) */}
+      {/* Sun - Main directional light (shadows disabled for performance) */}
       {/* Initial position matches day mode sun position calculated from sunAngle */}
       <directionalLight
         ref={sunLightRef}
         position={[50, 86.6, 0]}
         intensity={1.0}
-        castShadow
-        shadow-mapSize={[8192, 8192]}
-        shadow-camera-left={-200}
-        shadow-camera-right={200}
-        shadow-camera-top={200}
-        shadow-camera-bottom={-200}
-        shadow-camera-near={0.5}
-        shadow-camera-far={500}
-        shadow-bias={-0.0001}
-        shadow-normalBias={0.02}
-        shadow-radius={12}
+        castShadow={false}
       />
-      
+
       {/* Ambient light for overall illumination (intensity updated by DayNightCycle) */}
       <ambientLight ref={ambientLightRef} intensity={0.15} />
 
@@ -382,7 +342,7 @@ function SceneContent({ isDay, prims, selectedPrim, onPrimSelect, avatarPosition
       )}
 
       {/* Ocean - renders after regions so it's visible around edges */}
-      <Ocean isDay={isDay} sunLightRef={sunLightRef} />
+      {/* <Ocean isDay={isDay} sunLightRef={sunLightRef} /> */}
 
       {/* Prims */}
       {prims.map((prim) => (
@@ -508,7 +468,7 @@ export function World({ isDay }: { isDay: boolean }) {
   // Handle real-time prim property updates
   const handlePrimPropertyUpdate = (id: number, updates: Partial<Prim>) => {
     // Update local state immediately
-    setPrims(prevPrims => prevPrims.map(p => 
+    setPrims(prevPrims => prevPrims.map(p =>
       p.id === id ? { ...p, ...updates } : p
     ));
 
@@ -534,7 +494,7 @@ export function World({ isDay }: { isDay: boolean }) {
     if (axis === 'z') updates.position_z = prim.position_z + delta;
 
     // Update prims array
-    setPrims(prevPrims => prevPrims.map(p => 
+    setPrims(prevPrims => prevPrims.map(p =>
       p.id === primId ? { ...p, ...updates } : p
     ));
 
@@ -579,7 +539,7 @@ export function World({ isDay }: { isDay: boolean }) {
     if (axis === 'y') updates.rotation_y = prim.rotation_y + delta;
     if (axis === 'z') updates.rotation_z = prim.rotation_z + delta;
 
-    setPrims(prevPrims => prevPrims.map(p => 
+    setPrims(prevPrims => prevPrims.map(p =>
       p.id === primId ? { ...p, ...updates } : p
     ));
 
@@ -619,7 +579,7 @@ export function World({ isDay }: { isDay: boolean }) {
     if (axis === 'y') updates.scale_y = Math.max(0.1, prim.scale_y + delta);
     if (axis === 'z') updates.scale_z = Math.max(0.1, prim.scale_z + delta);
 
-    setPrims(prevPrims => prevPrims.map(p => 
+    setPrims(prevPrims => prevPrims.map(p =>
       p.id === primId ? { ...p, ...updates } : p
     ));
 
@@ -652,33 +612,37 @@ export function World({ isDay }: { isDay: boolean }) {
 
   return (
     <>
+      <FPSCounter />
       <Canvas
         camera={{ position: [0, 5, 10], fov: 75 }}
         style={{ width: "100%", height: "100vh" }}
-        gl={{ antialias: true }}
-        dpr={[1, 1.5]} // Reduced DPR for better performance
-        shadows
+        gl={{
+          antialias: false, // Disable antialiasing for better performance
+          powerPreference: "high-performance",
+          stencil: false,
+          depth: true,
+        }}
+        dpr={1} // Fixed DPR for consistent performance
+        shadows={false} // Disable shadows for better performance
         performance={{ min: 0.5 }} // Allow frame rate to drop to 30fps before degrading
         onCreated={({ gl, scene }) => {
-          // Enable shadows on renderer with better quality
-          gl.shadowMap.enabled = true;
-          gl.shadowMap.type = THREE.PCFShadowMap; // Faster than PCFSoftShadowMap
-          gl.shadowMap.autoUpdate = true;
-          
-          // Enable shadows on scene
+          // Optimize renderer settings
+          gl.shadowMap.enabled = false; // Shadows disabled for performance
+          gl.setPixelRatio(1); // Force pixel ratio to 1
+
+          // Enable frustum culling (Three.js does this by default, but ensure it's enabled)
+          // This automatically hides objects outside the camera view
           scene.traverse((object) => {
             if (object instanceof THREE.Mesh) {
-              // Ensure all meshes can receive shadows
-              if (!object.receiveShadow) {
-                object.receiveShadow = true;
-              }
+              // Ensure frustum culling is enabled (default)
+              object.frustumCulled = true;
             }
           });
         }}
       >
         <Suspense fallback={null}>
-          <SceneContent 
-            isDay={isDay} 
+          <SceneContent
+            isDay={isDay}
             prims={prims}
             selectedPrim={selectedPrim}
             onPrimSelect={(prim) => {
@@ -740,4 +704,3 @@ export function World({ isDay }: { isDay: boolean }) {
     </>
   );
 }
-
